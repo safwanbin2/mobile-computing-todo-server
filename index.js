@@ -1,34 +1,14 @@
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
+const { Response } = require("./Utils/Response");
+const { Server } = require("./Utils/Server");
 
-const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.mogpxeu.mongodb.net/?retryWrites=true&w=majority`;
+const server = new Server();
 
-const app = express();
-
-// middlewares
-app.use(cors());
-app.use(express.json());
-
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-});
-
-app.get("/", (req, res) => {
-  res.send("server is running fine");
-});
-
-function run() {
+async function run() {
   try {
-    client.connect();
-    console.log("mongodb connected successfully");
-
-    const todoCollection = client.db("WorkingTitle").collection("todos-list");
+    const app = server.getApp();
+    await server.connectToDB();
+    const db = server.getDB();
+    const todoCollection = db.collection("todos-list");
 
     // creating todo
     app.post("/todos", async (req, res) => {
@@ -52,101 +32,61 @@ function run() {
         const result = await todoCollection.insertOne(newTodo);
 
         if (!result.acknowledged) {
-          return res.status(400).json({
-            success: false,
-            message: "Could not create todo",
-            data: result,
-          });
+          return Response.success(res, "Could not create todo", result, 400);
         }
 
-        return res.status(201).json({
-          success: true,
-          message: "Todo created successfully",
-          data: newTodo,
-        });
+        return Response.success(res, "Todo created successfully", newTodo, 201);
       } catch (err) {
-        return res.status(400).json({
-          success: false,
-          message: "Something went wrong",
-          data: err,
-        });
+        return Response.success(res, "Something went wrong", err, 400);
       }
     });
 
-
-    // search
     app.get("/find", async (req, res) => {
       const searchTerm = req.query.searchTerm?.trim();
-    
+
       try {
         const query = searchTerm
           ? { title: { $regex: searchTerm, $options: "i" } } // case-insensitive search
           : {};
-    
+
         const result = await todoCollection
           .find(query)
-          .sort({ createdAt: -1 }) // latest first
+          .sort({ createdAt: -1 })
           .toArray();
-    
-        return res.status(200).json({
-          success: true,
-          message: "Todos fetched successfully",
-          data: result,
-        });
+
+        return Response.success(res, "Todos fetched successfully", result);
       } catch (error) {
-        return res.status(500).json({
-          success: false,
-          message: "Something went wrong",
-          error,
-        });
+        return Response.error(res, "Something went wrong", error, 500);
       }
     });
 
-    // delete todo
     app.delete("/todo", async (req, res) => {
-      const id = parseInt(req.query.id); // Convert query param to number
-    
+      const id = parseInt(req.query.id);
+
       if (isNaN(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid or missing ID",
-        });
+        return Response.error(res, "Invalid or missing ID", null, 400);
       }
-    
+
       try {
         const result = await todoCollection.deleteOne({ id });
-    
+
         if (result.deletedCount === 0) {
-          return res.status(404).json({
-            success: false,
-            message: "Todo not found",
-          });
+          return Response.error(res, "Todo not found", null, 404);
         }
-    
-        return res.status(200).json({
-          success: true,
-          message: "Todo deleted successfully",
-        });
+
+        return Response.success(res, "Todo deleted successfully");
       } catch (error) {
-        return res.status(500).json({
-          success: false,
-          message: "Something went wrong",
-          error,
-        });
+        return Response.error(res, "Something went wrong", error, 500);
       }
     });
 
-    // marking completed
     app.patch("/mark-completed", async (req, res) => {
       const id = parseInt(req.query.id);
-    
+
       if (isNaN(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid or missing ID",
-        });
+        return Response.error(res, "Invalid or missing ID", null, 400);
       }
-    
+
       try {
         const result = await todoCollection.updateOne(
           { id },
@@ -157,74 +97,45 @@ function run() {
             },
           }
         );
-    
+
         if (result.matchedCount === 0) {
-          return res.status(404).json({
-            success: false,
-            message: "Todo not found",
-          });
+          return Response.error(res, "Todo not found", null, 404);
         }
-    
-        return res.status(200).json({
-          success: true,
-          message: "Todo marked as completed",
-        });
+
+        return Response.success(res, "Todo marked as completed");
       } catch (error) {
-        return res.status(500).json({
-          success: false,
-          message: "Something went wrong",
-          error,
-        });
+        return Response.error(res, "Something went wrong", error, 500);
       }
     });
 
-    // getting single todo by id
     app.get("/todo", async (req, res) => {
       const id = parseInt(req.query.id);
-    
+
       if (isNaN(id)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid or missing ID",
-        });
+        return Response.error(res, "Invalid or missing ID", null, 400);
       }
-    
+
       try {
         const result = await todoCollection.findOne({ id });
-    
+
         if (!result) {
-          return res.status(404).json({
-            success: false,
-            message: "Todo not found",
-          });
+          return Response.error(res, "Todo not found", null, 404);
         }
-    
-        return res.status(200).json({
-          success: true,
-          message: "Todo fetched successfully",
-          data: result,
-        });
+
+        return Response.success(res, "Todo fetched successfully", result);
       } catch (error) {
-        return res.status(500).json({
-          success: false,
-          message: "Something went wrong",
-          error,
-        });
+        return Response.error(res, "Something went wrong", error, 500);
       }
     });
 
-    // updating todo
     app.patch("/todo", async (req, res) => {
       const id = parseInt(req.query.id);
       const { title } = req.body;
-    
+
       if (isNaN(id) || !title) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid ID or missing title",
-        });
+        return Response.error(res, "Invalid ID or missing title", null, 400);
       }
-    
+
       try {
         const result = await todoCollection.updateOne(
           { id },
@@ -235,28 +146,18 @@ function run() {
             },
           }
         );
-    
+
         if (result.matchedCount === 0) {
-          return res.status(404).json({
-            success: false,
-            message: "Todo not found",
-          });
+          return Response.error(res, "Todo not found", null, 404);
         }
-    
-        return res.status(200).json({
-          success: true,
-          message: "Todo updated successfully",
-        });
+
+        return Response.success(res, "Todo updated successfully");
       } catch (error) {
-        return res.status(500).json({
-          success: false,
-          message: "Something went wrong",
-          error,
-        });
+        return Response.error(res, "Something went wrong", error, 500);
       }
     });
-    
-    
+
+    server.start();
 
   } catch (error) {
     console.log(error);
@@ -264,7 +165,3 @@ function run() {
 }
 
 run();
-
-app.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
-});
