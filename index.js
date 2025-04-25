@@ -46,7 +46,7 @@ async function run() {
 
       try {
         const query = searchTerm
-          ? { title: { $regex: searchTerm, $options: "i" } } // case-insensitive search
+          ? { title: { $regex: searchTerm, $options: "i" } }
           : {};
 
         const result = await todoCollection
